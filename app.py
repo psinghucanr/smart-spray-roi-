@@ -1,24 +1,16 @@
 import streamlit as st
-import numpy as np
-import matplotlib.pyplot as plt
+from io import BytesIO
+from datetime import datetime
+
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.units import inch
+from reportlab.pdfgen import canvas
 
 
 st.set_page_config(page_title="Smart Spray ROI Calculator", layout="centered")
-st.markdown(
-    """
-    <style>
-    html, body, [class*="css"] {
-        font-size: 18px !important;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
 
 st.title("Smart Spray ROI Calculator")
 st.caption("Scenario tool to compare conventional broadcast spraying vs smart spraying.")
-
-
 
 st.header("Inputs")
 
@@ -118,6 +110,82 @@ life_years = (
     if include_depr
     else None
 )
+def build_pdf_report(inputs: dict, results: dict) -> bytes:
+    """
+    Creates a simple 1–2 page PDF report and returns it as bytes.
+    """
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+
+    # Layout helpers
+    x_left = 0.75 * inch
+    y = height - 0.9 * inch
+    line = 0.22 * inch
+
+    # Title
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(x_left, y, "Smart Spray ROI Calculator – Scenario Report")
+    y -= 0.35 * inch
+
+    c.setFont("Helvetica", 10)
+    c.drawString(x_left, y, f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    y -= 0.35 * inch
+
+    # Results summary (top)
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(x_left, y, "Results Summary")
+    y -= 0.25 * inch
+
+    c.setFont("Helvetica", 11)
+    for label, value in results.items():
+        c.drawString(x_left, y, f"{label}: {value}")
+        y -= line
+
+    y -= 0.15 * inch
+
+    # Inputs
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(x_left, y, "Inputs Used")
+    y -= 0.25 * inch
+
+    c.setFont("Helvetica", 11)
+    for label, value in inputs.items():
+        # Create new page if needed
+        if y < 1.0 * inch:
+            c.showPage()
+            y = height - 0.9 * inch
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(x_left, y, "Inputs Used (continued)")
+            y -= 0.35 * inch
+            c.setFont("Helvetica", 11)
+
+        c.drawString(x_left, y, f"{label}: {value}")
+        y -= line
+
+    # Disclaimer footer
+    y -= 0.2 * inch
+    if y < 1.2 * inch:
+        c.showPage()
+        y = height - 0.9 * inch
+
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(x_left, y, "Disclaimer")
+    y -= 0.18 * inch
+    c.setFont("Helvetica", 9)
+    c.drawString(
+        x_left,
+        y,
+        "Educational use only. Estimates depend on user inputs. Not financial or investment advice."
+    )
+
+    c.showPage()
+    c.save()
+
+    pdf_bytes = buffer.getvalue()
+    buffer.close()
+    return pdf_bytes
+
 
 st.header("Results")
 
@@ -128,38 +196,6 @@ total_acres_treated = acres * apps_per_year
 weed_factor = weed_coverage_pct / 100.0
 rate_factor = 1.0 - (rate_reduction_pct / 100.0)
 overall_use_factor = weed_factor * rate_factor  # proportion of conventional used by smart
-st.subheader("Field visualization (weed coverage)")
-
-# Controls for the visualization (optional but helpful)
-base_weeds = st.slider("Weed density (visual only)", 100, 1200, 600, 50)
-seed = st.number_input("Random pattern seed (visual only)", min_value=0, value=1, step=1)
-
-# Convert weed coverage (%) into number of weeds drawn
-weed_count = int(base_weeds * (weed_coverage_pct / 100.0))
-
-# Make random weed locations (same seed = stable layout)
-rng = np.random.default_rng(seed)
-x = rng.random(weed_count)
-y = rng.random(weed_count)
-
-# Draw field
-fig, ax = plt.subplots(figsize=(7, 4))
-ax.set_facecolor("#f4f0c3")  # pale yellow field background
-
-# Field boundary
-ax.add_patch(plt.Rectangle((0, 0), 1, 1, fill=False, linewidth=2))
-
-# Weeds (blue dots)
-ax.scatter(x, y, s=18, alpha=0.9)
-
-# Clean look
-ax.set_xlim(0, 1)
-ax.set_ylim(0, 1)
-ax.set_xticks([])
-ax.set_yticks([])
-ax.set_title(f"Weed coverage: {int(weed_coverage_pct)}%  |  Visual weeds: {weed_count}")
-
-st.pyplot(fig)
 
 # Spray volume (gallons)
 conv_gallons = total_acres_treated * gpa
@@ -194,6 +230,40 @@ col4, col5 = st.columns(2)
 col4.metric("Conventional spray volume (gal/yr)", f"{conv_gallons:,.0f}")
 col5.metric("Smart spray volume (gal/yr)", f"{smart_gallons:,.0f}")
 
+# --- Prepare report content for PDF download ---
+inputs_for_pdf = {
+    "Farm Area (acres)": f"{acres:,}",
+    "Number of spray applications per year": f"{apps_per_year:,}",
+    "Chemical cost per acre (conventional)": f"${chem_cost_per_ac:,.1f}",
+    "Chemical application rate (GPA)": f"{gpa:,.1f}",
+    "Estimated weed coverage (%)": f"{weed_coverage_pct:,.0f}%",
+    "Rate reduction on weeds (%)": f"{rate_reduction_pct:,.0f}%",
+    "Labor cost ($/hour)": f"${labor_cost_hr:,}",
+    "Conventional sprayer speed (ac/hr)": f"{conv_speed:,.1f}",
+    "Smart sprayer speed (ac/hr)": f"{smart_speed:,.1f}",
+    "Smart sprayer purchase cost ($)": f"${system_cost:,}",
+    "Annual software/service cost ($/acre)": f"${annual_service_per_ac:,}",
+    "Include depreciation": "Yes" if include_depr else "No",
+    "Expected machine life (years)": f"{life_years}" if include_depr else "—",
+}
+
+results_for_pdf = {
+    "Annual savings ($)": f"${annual_savings:,.0f}",
+    "ROI (%)": f"{roi_pct:,.1f}" if roi_pct is not None else "—",
+    "Payback (years)": f"{payback_years:,.2f}" if payback_years is not None else "—",
+    "Conventional spray volume (gal/yr)": f"{conv_gallons:,.0f}",
+    "Smart spray volume (gal/yr)": f"{smart_gallons:,.0f}",
+}
+
+pdf_bytes = build_pdf_report(inputs_for_pdf, results_for_pdf)
+
+st.download_button(
+    label="Download PDF report for this scenario",
+    data=pdf_bytes,
+    file_name="smart_spray_roi_scenario_report.pdf",
+    mime="application/pdf",
+)
+
 with st.expander("Cost breakdown"):
     st.write(f"Total acres treated annually: **{total_acres_treated:,.0f} ac**")
     st.write(f"Application rate: **{gpa:,.1f} GPA**")
@@ -214,9 +284,47 @@ with st.expander("Cost breakdown"):
 
 st.info("Tip: Run low/typical/high weed coverage scenarios to see how sensitive results are.")
 
+st.markdown("---")
+with st.expander("How calculations work"):
+    st.write(
+        "The calculator compares conventional broadcast spraying with smart (targeted) spraying. "
+        "It first estimates how many acres are treated each year based on farm area and number of applications. "
+        "Chemical costs for conventional spraying are calculated using cost per acre. "
+        "For smart spraying, chemical use is reduced based on estimated weed coverage and any rate reduction on weeds. "
+        "Labor costs are estimated using sprayer speed (ac/hr) and labor cost per hour. "
+        "Optional depreciation spreads the smart sprayer purchase cost over its expected life. "
+        "Annual savings are the difference between conventional and smart total costs, "
+        "which are then used to estimate ROI and payback."
+    )
+
+
 st.caption(
-    "Acknowledgement: This calculator is inspired by the MSU Extension "
-    "Smart Spray Annual ROI Calculator "
-    "(https://agresearch.montana.edu/narc/Programs_and_projects/narc-precisionag/smart-spray.html)."
+    "For details on how calculations are performed, see the calculation documentation below."
+)
+st.markdown("---")
+
+st.caption(
+    "Calculation Documentation: "
+    "[Download PDF](https://raw.githubusercontent.com/psinghucanr/smart-spray-roi-/main/"
+    "Smart_Spray_ROI_Calculation_Documentation_Detailed.pdf)"
 )
 
+st.caption(
+    "© 2026 University of California Cooperative Extension. All rights reserved.  \n"
+    "Developed by Paramveer Singh, UCCE Monterey County.  \n"
+    "Address: 1432 Abbott Street, Salinas, CA 93901."
+)
+
+st.caption(
+    "Acknowledgement: Acknowledgement: This tool is inspired from the "
+    "MSU Extension Smart Spray Annual ROI Calculator "
+    "(https://agresearch.montana.edu/narc/Programs_and_projects/narc-precisionag/smart-spray.html), "
+    "developed by the Northern Agricultural Research Center (NARC) Precision Agriculture Lab."
+)
+
+st.caption(
+    "This calculator is intended for educational purposes only and provides estimates "
+    "based on user-supplied inputs. Results should not be relied upon as financial, legal, "
+    "or investment advice. Users are encouraged to consult qualified financial advisors, "
+    "equipment dealers, and Extension specialists before making investment decisions."
+)
