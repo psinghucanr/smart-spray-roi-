@@ -260,6 +260,15 @@ roi_pct = (annual_savings / system_cost * 100.0) if system_cost > 0 else None
 
 overall_chem_change_pct = (overall_use_factor - 1) * 100
 
+# Determine whether it's reduction or increase
+chem_label = (
+    "Overall Chemical Reduction (%)"
+    if overall_chem_change_pct < 0
+    else "Overall Chemical Increase (%)"
+)
+
+chem_value = abs(overall_chem_change_pct)
+
 roi_text = f"{roi_pct:,.1f}" if roi_pct is not None else "—"
 payback_text = f"{payback_years:,.1f}" if payback_years is not None else "—"
 
@@ -342,8 +351,9 @@ results_html = f"""
       </div>
 
       <div class="metric-card">
-        <div class="metric-label">Overall Chemical Reduction (%)</div>
-        <div class="metric-value">{overall_chem_reduction:,.1f}</div>
+        <div class="metric-label">{chem_label}</div>
+        <div class="metric-value">{chem_value:,.1f}</div>
+
       </div>
     </div>
   </div>
@@ -405,7 +415,7 @@ with st.expander("What do these results mean?"):
     st.write("**Annual Savings:** Estimated yearly difference in total cost between conventional and smart spraying (chemical + labor + software/service + optional depreciation).")
     st.write("**ROI (%):** Annual Savings ÷ Smart sprayer purchase cost × 100. (Simple annual return estimate.)")
     st.write("**Payback Period (Years):** Smart sprayer purchase cost ÷ Annual Savings. If savings are ≤ 0, payback is not shown.")
-    st.write("**Overall Chemical Reduction (%):** Percent reduction in chemical use compared to broadcast spraying, based on weed coverage and rate reduction.")
+    st.write("**Overall Chemical Change (%):** Percent increase or decrease in chemical use compared to broadcast spraying, based on weed coverage and smart spray GPA relative to conventional GPA.")
 
 # --- small global CSS to style the download button green ---
 st.markdown(
