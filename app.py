@@ -51,7 +51,7 @@ chem_cost_per_ac = st.number_input(
     help="Cost of herbicide per acre when spraying the full field (broadcast)."
 )
 gpa = st.number_input(
-    "Chemical application rate (GPA)",
+    "Chemical application rate (GPA) for Conventional Sprayer",
     min_value=0.0,
     value=10.0,
     step=0.1,
@@ -71,15 +71,20 @@ weed_coverage_pct = st.slider(
 )
 
 
-# 6) Rate reduction: no decimal
-rate_reduction_pct = st.slider(
-    "Rate reduction on weeds (%)",
-    0,
-    100,
-    0,
-    1,
-    help="How much lower the application rate is on detected weeds. Use 0% if the same rate as conventional is applied.",
+# 6) Chemical application rate for Smart sprayer reduction: no decimal
+smart_gpa = st.number_input(
+    "Smart spray application rate on weeds (GPA)",
+    min_value=0.0,
+    value=gpa,   # default to same as conventional
+    step=0.1,
+    format="%.1f",
+    help=(
+        "Application rate used on detected weed patches. "
+        "Can be lower, equal, or higher than the conventional broadcast rate."
+    ),
 )
+
+
 
 # 9) Labor cost label change; 7) no decimals
 labor_cost_hr = st.number_input(
@@ -226,8 +231,8 @@ total_acres_treated = acres * apps_per_year
 
 # Factors for smart spraying
 weed_factor = weed_coverage_pct / 100.0
-rate_factor = 1.0 - (rate_reduction_pct / 100.0)
-overall_use_factor = weed_factor * rate_factor  # proportion of conventional used by smart
+rate_factor = smart_gpa / gpa if gpa > 0 else 0
+overall_use_factor = weed_factor * rate_factor
 
 # Spray volume (gallons)
 conv_gallons = total_acres_treated * gpa
@@ -253,7 +258,7 @@ annual_savings = conv_total - smart_total
 payback_years = (system_cost / annual_savings) if annual_savings > 0 else None
 roi_pct = (annual_savings / system_cost * 100.0) if system_cost > 0 else None
 
-overall_chem_reduction = (1 - overall_use_factor) * 100
+overall_chem_change_pct = (overall_use_factor - 1) * 100
 
 roi_text = f"{roi_pct:,.1f}" if roi_pct is not None else "—"
 payback_text = f"{payback_years:,.1f}" if payback_years is not None else "—"
@@ -356,9 +361,9 @@ inputs_for_pdf = {
     "Farm Area (acres)": f"{acres:,}",
     "Number of spray applications per year": f"{apps_per_year:,}",
     "Chemical cost per acre (conventional)": f"${chem_cost_per_ac:,.1f}",
-    "Chemical application rate (GPA)": f"{gpa:,.1f}",
+    "Chemical application rate (GPA) for Conventional Sprayer": f"{gpa:,.1f}",
     "Estimated weed coverage (%)": f"{weed_coverage_pct:.1f}%",
-    "Rate reduction on weeds (%)": f"{rate_reduction_pct:,.0f}%",
+    "Smart spray application rate on weeds (GPA)": f"{smart_gpa:,.1f}",
     "Labor cost ($/hour)": f"${labor_cost_hr:,}",
     "Conventional sprayer speed (ac/hr)": f"{conv_speed:,.1f}",
     "Smart sprayer speed (ac/hr)": f"{smart_speed:,.1f}",
